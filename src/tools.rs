@@ -222,8 +222,8 @@ pub async fn bash_tool(cmd: &str) -> Result<String> {
         .spawn()
         .with_context(|| format!("Failed to execute command: {cmd}"))?;
 
-    let stdout = child.stdout.take().expect("Failed to capture stdout");
-    let stderr = child.stderr.take().expect("Failed to capture stderr");
+    let stdout = child.stdout.take().context("Failed to capture stdout")?;
+    let stderr = child.stderr.take().context("Failed to capture stderr")?;
 
     let stdout_reader = BufReader::new(stdout);
     let mut output_lines = Vec::new();
@@ -280,8 +280,8 @@ pub async fn bash_tool(cmd: &str) -> Result<String> {
         .spawn()
         .with_context(|| format!("Failed to execute command: {cmd}"))?;
 
-    let stdout = child.stdout.take().expect("Failed to capture stdout");
-    let stderr = child.stderr.take().expect("Failed to capture stderr");
+    let stdout = child.stdout.take().context("Failed to capture stdout")?;
+    let stderr = child.stderr.take().context("Failed to capture stderr")?;
 
     let stdout_reader = BufReader::new(stdout);
     let mut output_lines = Vec::new();

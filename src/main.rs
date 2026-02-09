@@ -134,6 +134,8 @@ fn main() -> ExitCode {
     );
 
     // 创建运行时
+    // SAFETY: Runtime creation failure is unrecoverable and should terminate the program.
+    #[allow(clippy::expect_used)]
     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
 
     // 创建 API 客户端
