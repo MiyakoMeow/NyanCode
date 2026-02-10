@@ -12,7 +12,7 @@ use serde_json::json;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use api::AnthropicClient;
+use api::anthropic::Client;
 use config::Config;
 use ui::{colors, separator};
 
@@ -26,7 +26,7 @@ struct CliArgs {
 }
 
 async fn run_interactive_mode(
-    client: &AnthropicClient,
+    client: &Client,
     system_prompt: &str,
     schema: &[serde_json::Value],
 ) -> Result<()> {
@@ -87,7 +87,7 @@ async fn run_interactive_mode(
 
 async fn run_single_message_mode(
     message: String,
-    client: &AnthropicClient,
+    client: &Client,
     system_prompt: &str,
     schema: &[serde_json::Value],
 ) -> Result<()> {
@@ -139,7 +139,7 @@ fn main() -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
 
     // 创建 API 客户端
-    let client = AnthropicClient::new(config.clone());
+    let client = Client::new(config.clone());
 
     // 准备系统提示和工具schema
     let system_prompt = format!("Concise coding assistant. cwd: {}", config.cwd);
