@@ -6,14 +6,18 @@ use serde_json::{Value, json};
 
 /// Tool definition with description and parameters.
 pub struct ToolDef {
+    /// 工具名称
     pub name: &'static str,
+    /// 工具功能描述
     pub description: &'static str,
+    /// 工具参数定义
     pub params: ToolParams,
 }
 
 /// Tool parameter definitions.
 pub struct ToolParams {
-    pub params: &'static [(&'static str, &'static str, &'static str)], // (name, type, description)
+    /// 参数数组，每个元素为 (name, type, description)
+    pub params: &'static [(&'static str, &'static str, &'static str)],
 }
 
 /// Create the tool definition for the 'read' tool.

@@ -15,18 +15,28 @@ use std::pin::Pin;
 /// API错误类型
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ApiError {
+    /// 网络连接错误
     #[error("Network error: {0}")]
     NetworkError(String),
 
+    /// HTTP请求错误
     #[error("HTTP error {status}: {message}")]
-    HttpError { status: u16, message: String },
+    HttpError {
+        /// HTTP状态码
+        status: u16,
+        /// 错误消息
+        message: String,
+    },
 
+    /// 数据解析错误
     #[error("Parse error: {0}")]
     ParseError(String),
 
+    /// 流式响应错误
     #[error("Stream error: {0}")]
     StreamError(String),
 
+    /// API返回错误
     #[error("API error: {0}")]
     Api(String),
 }
@@ -34,21 +44,34 @@ pub enum ApiError {
 /// 流式响应事件
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
+    /// 消息开始事件，表示流式响应的开始
     MessageStart,
+    /// 内容块开始事件，包含内容块类型和索引
     ContentBlockStart {
+        /// 内容块在消息中的索引位置
         index: u32,
+        /// 内容块的具体内容
         content_block: ContentBlock,
     },
+    /// 内容块增量事件，包含增量数据
     ContentBlockDelta {
+        /// 内容块在消息中的索引位置
         index: u32,
+        /// 增量数据
         delta: Delta,
     },
+    /// 内容块结束事件，表示某个内容块已完成
     ContentBlockStop {
+        /// 内容块在消息中的索引位置
         index: u32,
     },
+    /// 消息增量事件，包含消息级别的增量数据
     MessageDelta,
+    /// 消息结束事件，表示流式响应的结束
     MessageStop,
+    /// 错误事件，包含API错误信息
     Error {
+        /// 错误详情
         error: ApiError,
     },
 }
@@ -57,16 +80,22 @@ pub enum StreamEvent {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum ContentBlock {
+    /// 文本内容块，包含纯文本内容
     #[serde(rename = "text")]
     Text {
+        /// 文本内容
         #[serde(default)]
         #[allow(dead_code)]
         text: String,
     },
+    /// 工具调用内容块，描述需要执行的函数调用
     #[serde(rename = "tool_use")]
     ToolUse {
+        /// 工具调用的唯一标识符
         id: String,
+        /// 工具（函数）的名称
         name: String,
+        /// 工具调用的输入参数
         input: Value,
     },
 }
@@ -75,10 +104,18 @@ pub enum ContentBlock {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum Delta {
+    /// 文本增量，包含新增的文本内容
     #[serde(rename = "text_delta")]
-    Text { text: String },
+    Text {
+        /// 增量的文本内容
+        text: String,
+    },
+    /// JSON增量，包含JSON结构数据的增量部分
     #[serde(rename = "input_json_delta")]
-    InputJson { partial_json: String },
+    InputJson {
+        /// 部分的JSON数据，用于构建完整的JSON结构
+        partial_json: String,
+    },
 }
 
 /// SSE事件流类型
@@ -86,27 +123,36 @@ pub type EventStream = Pin<Box<dyn Stream<Item = Result<StreamEvent, ApiError>> 
 
 /// 工具调用收集器
 pub struct ToolCallCollector {
+    /// 待处理的工具调用列表
     calls: Vec<PendingToolCall>,
 }
 
 /// 待处理的工具调用
 #[derive(Debug, Clone)]
 struct PendingToolCall {
+    /// 工具调用的唯一标识符
     id: String,
+    /// 工具（函数）的名称
     name: String,
+    /// 工具输入参数的缓冲区，用于累积增量JSON数据
     input_buffer: String,
+    /// 是否已完成处理
     completed: bool,
 }
 
 /// 完成的工具调用
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolCall {
+    /// 工具调用的唯一标识符
     pub id: String,
+    /// 工具（函数）的名称
     pub name: String,
+    /// 工具调用的输入参数
     pub input: Value,
 }
 
 impl ToolCallCollector {
+    /// 创建一个新的工具调用收集器
     pub fn new() -> Self {
         Self { calls: Vec::new() }
     }
@@ -191,6 +237,7 @@ impl ToolCallCollector {
         completed
     }
 
+    /// 检查收集器是否处于活跃状态（有待处理的工具调用）
     pub fn is_active(&self) -> bool {
         !self.calls.is_empty()
     }
@@ -300,13 +347,15 @@ fn parse_sse_stream(response: reqwest::Response) -> EventStream {
 
 /// API client.
 pub struct Client {
+    /// HTTP客户端，用于发送API请求
     http_client: HttpClient,
+    /// API配置，包含密钥、基础URL等信息
     config: Config,
 }
 
 impl Client {
     /// Create a new API client with the given configuration.
-pub fn new(config: Config) -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
             http_client: HttpClient::new(),
             config,
@@ -346,7 +395,7 @@ pub fn new(config: Config) -> Self {
             body_obj.insert("tools".to_string(), json!(tools_value));
         }
 
-// 发送HTTP请求
+        // 发送HTTP请求
         let response = self
             .http_client
             .post(format!("{}/v1/messages", self.config.base_url))

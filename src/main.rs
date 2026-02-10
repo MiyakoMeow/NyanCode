@@ -1,9 +1,14 @@
 //! nanocode - minimal Claude code alternative in Rust
 
+/// API模块 - 处理与Claude AI的通信和交互
 mod api;
+/// 配置模块 - 管理应用配置和环境变量
 mod config;
+/// 模式定义模块 - 定义工具调用的JSON模式
 mod schema;
+/// 工具模块 - 提供AI助手可用的工具函数
 mod tools;
+/// 用户界面模块 - 处理终端显示和交互界面
 mod ui;
 
 use anyhow::Result;
@@ -25,6 +30,7 @@ struct CliArgs {
     message: Option<String>,
 }
 
+/// 运行交互式模式 - 进入REPL循环，与AI进行实时对话
 async fn run_interactive_mode(
     client: &Client,
     system_prompt: &str,
@@ -85,6 +91,7 @@ async fn run_interactive_mode(
     Ok(())
 }
 
+/// 运行单条消息模式 - 发送单次消息并获取AI响应
 async fn run_single_message_mode(
     message: String,
     client: &Client,
