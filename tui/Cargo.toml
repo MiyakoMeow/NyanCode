@@ -4,3 +4,20 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+nyan-code = { path = "../core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+regex.workspace = true
+glob.workspace = true
+walkdir.workspace = true
+clap.workspace = true
+futures.workspace = true
+async-stream.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "nyan-code-tui"
+path = "src/main.rs"

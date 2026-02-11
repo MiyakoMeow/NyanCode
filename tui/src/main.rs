@@ -1,22 +1,18 @@
 //! nanocode - minimal Claude code alternative in Rust
 
-/// API模块 - 处理与Claude AI的通信和交互
-mod api;
-/// 配置模块 - 管理应用配置和环境变量
-mod config;
-/// 模式定义模块 - 定义工具调用的JSON模式
-/// 工具模块 - 提供AI助手可用的工具函数
-mod tools;
+// TUI 应用程序，使用核心库中的功能
 
 use anyhow::Result;
 use clap::Parser;
 use serde_json::json;
 use std::io::{self, Write};
 use std::process::ExitCode;
+use tokio::sync::mpsc;
 
-use api::anthropic::{AnthropicConfig, Client};
-use config::Config;
 use nyan_code_tui::{colors, separator};
+
+// 使用 core 库模块
+use nyan_code::{AnthropicConfig, Client, Config, CoreEvent};
 
 /// AI编程助手 - Claude Code Rust实现
 #[derive(Parser, Debug)]
@@ -32,6 +28,7 @@ async fn run_interactive_mode(
     client: &Client,
     system_prompt: &str,
     schema: &[serde_json::Value],
+    event_sender: mpsc::UnboundedSender<CoreEvent>,
 ) -> Result<()> {
     let mut messages: Vec<serde_json::Value> = Vec::new();
 
@@ -76,7 +73,7 @@ async fn run_interactive_mode(
 
         // Run agentic loop (streaming)
         if let Err(e) = client
-            .run_agent_loop_stream(&mut messages, system_prompt, schema)
+            .run_agent_loop_stream(&mut messages, system_prompt, schema, Some(&event_sender))
             .await
         {
             println!("{}⏺ Error: {}{}", colors::RED, e, colors::RESET);
@@ -94,6 +91,7 @@ async fn run_single_message_mode(
     client: &Client,
     system_prompt: &str,
     schema: &[serde_json::Value],
+    event_sender: mpsc::UnboundedSender<CoreEvent>,
 ) -> Result<()> {
     let mut messages = Vec::new();
 
@@ -105,10 +103,66 @@ async fn run_single_message_mode(
 
     // 调用流式响应（支持工具调用）
     client
-        .run_agent_loop_stream(&mut messages, system_prompt, schema)
+        .run_agent_loop_stream(&mut messages, system_prompt, schema, Some(&event_sender))
         .await?;
 
     Ok(())
+}
+
+/// 处理核心事件的异步任务
+async fn handle_core_events(mut receiver: mpsc::UnboundedReceiver<CoreEvent>) {
+    while let Some(event) = receiver.recv().await {
+        match event {
+            CoreEvent::TextDelta(text) => {
+                print!("{}", text);
+                io::stdout().flush().unwrap();
+            }
+            CoreEvent::ToolCallStart { id, name } => {
+                println!(
+                    "\n{}🔧{} {}{}{} (id: {})",
+                    colors::BOLD,
+                    colors::RESET,
+                    colors::YELLOW,
+                    name,
+                    colors::RESET,
+                    id
+                );
+            }
+            CoreEvent::ToolExecuting { name } => {
+                println!("{}⚙️{} {}执行中...", colors::BOLD, colors::RESET, name);
+            }
+            CoreEvent::ToolResult { name, result } => {
+                println!(
+                    "\n{}📝{} {}{}{} 结果:",
+                    colors::BOLD,
+                    colors::RESET,
+                    colors::GREEN,
+                    name,
+                    colors::RESET
+                );
+                println!("{}", result);
+                print!("{}", separator());
+            }
+            CoreEvent::Error(error) => {
+                println!(
+                    "\n{}❌{} {}错误: {}{}",
+                    colors::BOLD,
+                    colors::RESET,
+                    colors::RED,
+                    error,
+                    colors::RESET
+                );
+                print!("{}", separator());
+            }
+            CoreEvent::MessageStart => {
+                print!("{}", separator());
+            }
+            CoreEvent::MessageStop => {
+                print!("{}", separator());
+            }
+        }
+        io::stdout().flush().unwrap();
+    }
 }
 
 fn main() -> ExitCode {
@@ -143,29 +197,42 @@ fn main() -> ExitCode {
     #[allow(clippy::expect_used)]
     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
 
+    // 创建事件通道
+    let (event_sender, event_receiver) = mpsc::unbounded_channel();
+
     // 创建 API 客户端
     let client = Client::new(anthropic_config.clone());
 
     // 准备系统提示和工具schema
     let system_prompt = format!("Concise coding assistant. cwd: {}", config.cwd);
-    let schema = api::anthropic::schema::tool_schemas();
+    let schema = nyan_code::api::anthropic::schema::tool_schemas();
+
+    // 启动事件处理任务
+    let handle = rt.spawn(async move {
+        handle_core_events(event_receiver).await;
+    });
 
     // 根据参数选择运行模式
     let result = rt.block_on(async {
         if let Some(message) = args.message {
             // 非交互模式：执行单次对话
-            run_single_message_mode(message, &client, &system_prompt, &schema).await
+            run_single_message_mode(message, &client, &system_prompt, &schema, event_sender).await
         } else {
             // 交互模式：进入REPL
-            run_interactive_mode(&client, &system_prompt, &schema).await
+            run_interactive_mode(&client, &system_prompt, &schema, event_sender).await
         }
+    });
+
+    // 等待事件处理任务完成
+    rt.block_on(async {
+        handle.await.unwrap();
     });
 
     // 处理结果并返回退出码
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("❌ Error: {e}");
+            eprintln!("{}❌{} Error: {}", colors::RED, colors::RESET, e);
             ExitCode::FAILURE
         }
     }

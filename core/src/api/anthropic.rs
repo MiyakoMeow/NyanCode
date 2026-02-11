@@ -4,14 +4,15 @@
 
 pub mod schema;
 
+use crate::events;
 use crate::tools;
 use anyhow::Result;
 use futures::stream::Stream;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::io::Write;
 use std::pin::Pin;
+use tokio::sync::mpsc;
 
 /// Anthropic API configuration.
 #[allow(clippy::module_name_repetitions)]
@@ -313,6 +314,12 @@ impl ToolCallCollector {
     }
 }
 
+impl Default for ToolCallCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// 解析SSE响应流
 fn parse_sse_stream(response: reqwest::Response) -> EventStream {
     use futures::stream::StreamExt;
@@ -491,11 +498,11 @@ impl Client {
     /// Run the agentic loop: keep calling API until no more tool calls.
     ///
     /// # Arguments
-    /// # Arguments
     ///
     /// * `messages` - Mutable reference to conversation history
     /// * `system_prompt` - System prompt for the model
     /// * `tools` - Tool definitions
+    /// * `event_sender` - Optional sender for core events
     ///
     /// # Returns
     ///
@@ -505,6 +512,7 @@ impl Client {
         messages: &mut Vec<Value>,
         system_prompt: &str,
         tools: &[Value],
+        event_sender: Option<&mpsc::UnboundedSender<events::CoreEvent>>,
     ) -> Result<(), ApiError> {
         use futures::stream::StreamExt;
 
@@ -514,6 +522,11 @@ impl Client {
         let mut current_text = String::new();
 
         loop {
+            // 发送消息开始事件
+            if let Some(sender) = event_sender {
+                let _ = sender.send(events::CoreEvent::MessageStart);
+            }
+
             // 创建流式请求
             let mut stream = self
                 .create_message_stream(messages, system_prompt, Some(tools))
@@ -528,11 +541,10 @@ impl Client {
                         delta: Delta::Text { text },
                         ..
                     } => {
-                        // 实时输出文本
-                        print!("{text}");
-                        std::io::stdout()
-                            .flush()
-                            .map_err(|e: std::io::Error| ApiError::StreamError(e.to_string()))?;
+                        // 发送文本增量事件
+                        if let Some(sender) = event_sender {
+                            let _ = sender.send(events::CoreEvent::TextDelta(text.clone()));
+                        }
                         current_text.push_str(text);
                     }
 
@@ -540,14 +552,27 @@ impl Client {
                         content_block: ContentBlock::ToolUse { id, name, .. },
                         ..
                     } => {
-                        println!("\n🔧 Tool call: {name} (id: {id})");
+                        // 发送工具调用开始事件
+                        if let Some(sender) = event_sender {
+                            let _ = sender.send(events::CoreEvent::ToolCallStart {
+                                id: id.clone(),
+                                name: name.clone(),
+                            });
+                        }
                     }
 
                     StreamEvent::Error { error } => {
-                        println!("\n[Error: {error}]");
+                        // 发送错误事件
+                        if let Some(sender) = event_sender {
+                            let _ = sender.send(events::CoreEvent::Error(error.to_string()));
+                        }
                     }
 
                     StreamEvent::MessageStop => {
+                        // 发送消息停止事件
+                        if let Some(sender) = event_sender {
+                            let _ = sender.send(events::CoreEvent::MessageStop);
+                        }
                         break;
                     }
 
@@ -587,7 +612,12 @@ impl Client {
 
                 // 执行工具
                 for call in tool_calls {
-                    println!("\n🔧 Executing tool: {}", call.name);
+                    // 发送工具执行开始事件
+                    if let Some(sender) = event_sender {
+                        let _ = sender.send(events::CoreEvent::ToolExecuting {
+                            name: call.name.clone(),
+                        });
+                    }
 
                     let result = self
                         .run_tool(
@@ -601,7 +631,15 @@ impl Client {
                         )
                         .await;
 
-                    // 添加工具结果
+                    // 发送工具结果事件
+                    if let Some(sender) = event_sender {
+                        let _ = sender.send(events::CoreEvent::ToolResult {
+                            name: call.name.clone(),
+                            result: result.clone(),
+                        });
+                    }
+
+                    // 添加工具结果到消息历史
                     messages.push(json!({
                         "role": "user",
                         "content": [{

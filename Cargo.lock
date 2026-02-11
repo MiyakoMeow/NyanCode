@@ -833,7 +833,6 @@ dependencies = [
  "clap",
  "futures",
  "glob",
- "nyan-code-tui",
  "regex",
  "reqwest",
  "serde",
@@ -846,6 +845,21 @@ dependencies = [
 [[package]]
 name = "nyan-code-tui"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "clap",
+ "futures",
+ "glob",
+ "nyan-code",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "walkdir",
+]
 
 [[package]]
 name = "once_cell"
